@@ -1,2 +1,3 @@
 # kdh-02
-embedded dev
+wanna be embedded developer
+## 김도훈 페이지
