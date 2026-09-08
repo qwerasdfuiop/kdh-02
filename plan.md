@@ -1,325 +1,133 @@
-가능해. 다만 아까 내가 제안한 전체 구조를 1주 안에 다 구현하는 건, 입문자 5명에게는 무리라고 보는 게 맞아. 프로젝트 아이디어가 어려운 게 아니라, Trichimera + 위험판단 + Wayland + 멀티프로세스 + SHM + Socket + epoll + timerfd + GPIO를 한꺼번에 하려는 범위가 어렵다.
+응. **가능해. 다만 내가 앞에서 제안한 전체 구성을 1주 안에 전부 구현하는 건 초보자 5명에게는 과하다.** 목표를 조금 낮추는 게 맞아.
 
-대신 5명이 병렬로 움직이고, Linux 요소를 2~3개만 제대로 구현하면 충분히 완성 가능해.
+APACHE6 자체는 카메라 입력뿐 아니라 UART, I2C, CAN, SPI, PWM 같은 외부 인터페이스까지 갖춘 개발 보드라 확장할 여지는 충분하다. 예를 들어 문서상 PWM은 4채널이고 J4 외부 커넥터로 연결된다.  문제는 하드웨어가 아니라 **일주일이라는 시간과 팀의 숙련도**야.
 
-내가 권하는 현실적인 목표
+내가 너희 팀이라면 성공 기준을 이렇게 잡겠어.
 
-최종 시스템을 이 정도로 줄이자.
+| 구분                     | 1주 목표         |
+| ---------------------- | ------------- |
+| Trichimera             | **필수**        |
+| 객체 Detection           | **필수**        |
+| Freespace              | **필수**        |
+| Lane                   | 가능하면 필수       |
+| SAFE/WARNING/DANGER 판단 | **필수**        |
+| Wayland 결과 표시          | **필수**        |
+| 멀티프로세스                 | **1단계만 도전**   |
+| Shared Memory          | **도전**        |
+| Unix Domain Socket     | 시간 남으면        |
+| epoll                  | **과감히 제외 가능** |
+| timerfd/signalfd       | 제외            |
+| LED/Buzzer             | 정말 쉬울 때만      |
+| 실제 차량 제어               | **하지 않음**     |
 
+특히 중요한 건 **AI를 직접 만드는 프로젝트가 아니라는 점**이야. 이미 제공되는 Trichimera를 활용해서 출력 결과를 받아 여러분이 C/C++로 판단 로직을 만드는 것이 핵심이니까, AI 전공 수준의 지식이 필요한 프로젝트는 아니야.
+
+### 초보자 5명이라면 구조도 이 정도면 충분해
+
+처음에는 아예 **단일 프로세스**로 만들어.
+
+```text
 Camera
-   ↓
+  ↓
+기존 APACHE6 Sample
+  ↓
 Trichimera
-   ↓
-Detection + Freespace + Lane
-   ↓
-┌─────────────────────────┐
-│    Risk Decision        │
-│                         │
-│  객체가 주행영역인가?   │
-│  내 차선에 있는가?      │
-│  위험구역에 들어왔나?   │
-└───────────┬─────────────┘
-            ↓
+  ↓
+┌───────────────────────────┐
+│ Detection                 │
+│ Freespace                 │
+│ Lane                      │
+└─────────────┬─────────────┘
+              ↓
+      우리가 작성한 C/C++
+          Risk Engine
+              ↓
    SAFE / WARNING / DANGER
-            ↓
-        Wayland 표시
-            +
-        LED/Buzzer
+              ↓
+        Wayland Overlay
+```
 
-그리고 Linux 시스템 프로그래밍은 욕심내지 말고 이 세 가지에 집중하는 걸 추천해.
+이게 **완성되면 프로젝트 성공**이라고 정의하자.
 
-① pthread → ② IPC 하나 → ③ GPIO 또는 timerfd
+그다음 시간이 남으면 딱 한 번만 구조를 개선한다.
 
-epoll, signalfd, syslog, 여러 프로세스 구조까지 전부 넣을 필요 없다.
+```text
+┌──────────────────┐
+│ Perception       │
+│ Trichimera       │
+└────────┬─────────┘
+         │
+    Shared Memory
+         │
+┌────────▼─────────┐
+│ ADAS             │
+│ Risk Engine      │
+│ UI               │
+└──────────────────┘
+```
 
-특히 멀티프로세스는 처음부터 넣지 마. 먼저 하나의 프로그램으로 완성한 뒤 시간이 남으면 분리해야 한다.
+이것만 해도 발표할 때
 
-5명 역할은 이렇게 나누는 게 좋다
-인원	담당	난이도
-1	Trichimera/NPU 담당 — SDK 샘플 실행, Detection/Freespace/Lane 출력 구조 파악	★★★★
-2	위험판단 담당 — bbox/freespace/lane을 받아 SAFE/WARNING/DANGER 계산	★★★
-3	Wayland/UI 담당 — bbox, lane, freespace, 위험 상태 표시	★★★
-4	Linux 담당 — pthread, IPC 등 시스템 프로그래밍 구조	★★★★
-5	GPIO/통합 담당 — LED/Buzzer + 빌드/테스트/통합 지원	★★
+> "초기에는 단일 프로세스로 기능을 검증한 뒤, 인지 처리와 위험 판단 모듈의 결합도를 낮추기 위해 POSIX Shared Memory를 이용한 멀티프로세스 구조로 개선했습니다."
 
-여기서 중요한 게 있어.
+라고 설명할 수 있어.
 
-1번을 혼자 내버려두면 안 돼.
+**시스템 프로그래밍 프로젝트로서 충분히 괜찮은 이야기가 된다.**
 
-프로젝트 초반 최대 리스크는 위험 판단 알고리즘이 아니라 “Trichimera 결과를 우리가 원하는 형태로 뽑아낼 수 있는가?”이기 때문이다. Day 1~2에는 1번과 3번 또는 5번이 같이 SDK 샘플을 분석하는 편이 좋다.
+### 5명이면 이렇게 나누자
 
-입문자라면 위험 판단도 더 단순하게 시작하자
+1명은 **APACHE6/Trichimera 담당**. 기존 샘플을 실행하고 Detection/Lane/Freespace 결과가 코드 어디에서 나오는지 찾는 게 최우선이다.
 
-처음부터 lane geometry를 계산해서 완벽한 ego lane을 구하려고 하지 마.
+2명은 **Risk Engine 담당**. 처음에는 AI 없이 가짜 좌표를 집어넣어서 `risk_evaluate()`부터 만들면 된다.
 
-Level 1 — 가장 먼저 구현
+1명은 **Wayland/UI 담당**. 기존 샘플 위에 bbox, 영역, `DANGER` 같은 결과를 그리는 역할이다.
 
-Detection bbox의 하단 중앙 좌표만 사용한다.
+마지막 1명은 **Linux/통합 담당**. 처음부터 epoll을 공부하는 게 아니라 빌드, 실행 스크립트, 프로세스 구조를 관리하다가 MVP가 완성되면 shared memory 분리를 시도한다.
 
-         ┌────────┐
-         │  CAR   │
-         └───●────┘
-             ↑
-        판단 기준점
+그리고 담당자를 나눴다고 각자 자기 코드만 보면 안 돼. **최소 2명이 Trichimera 샘플 구조를 이해하고, 최소 2명이 Risk Engine을 이해하게 하는 것**이 좋아.
 
+### 가장 조심해야 하는 부분
 
-┌──────────────────────────┐
-│                          │
-│          SAFE            │
-│                          │
-│       ┌────────┐         │
-│       │WARNING │         │
-│       │        │         │
-│       │ DANGER │         │
-│       └────────┘         │
-│                          │
-└──────────────────────────┘
+나는 Risk Engine 자체보다 **SDK를 처음 분석하는 시간이 가장 위험하다고 봐.**
 
-객체 좌표가 중앙 위험 ROI 안으로 들어오면:
+너희가 처음 보는 거대한 SDK에서
 
-if (inside_danger_roi(object))
-    state = DANGER;
-else if (inside_warning_roi(object))
-    state = WARNING;
-else
-    state = SAFE;
+> 카메라 영상이 어디로 들어오는지 → NPU가 어디서 호출되는지 → Trichimera 결과가 어떤 구조체로 나오는지 → Wayland로 어떻게 전달되는지
 
-이것부터 성공시킨다.
+찾다가 이틀을 써버릴 수 있어.
 
-Level 2 — Freespace 추가
-if (inside_freespace(object)) {
-    // 실제 주행 가능 영역에 존재
-}
+그래서 **첫날 결과에 따라 프로젝트 범위를 바로 조절해야 한다.**
 
-그러면
+예를 들어 첫날 저녁에 Detection은 얻었는데 Lane 출력 구조를 못 찾았다?
 
-Detection + Freespace 융합
+**Lane은 잠깐 버려.**
 
-이 된다.
-
-Level 3 — Lane 추가
-
-마지막으로 가능할 때:
-
-if (inside_freespace &&
-    inside_ego_lane &&
-    inside_warning_roi)
-{
-    state = WARNING;
-}
-
-을 넣는다.
-
-즉,
-
-Detection
-    ↓
-Detection + ROI
-    ↓
-Detection + Freespace + ROI
-    ↓
-Detection + Freespace + Lane + ROI
-
-순서로 개발해야 한다.
-
-처음부터 세 출력을 모두 융합하려고 하면 디버깅이 굉장히 어려워진다.
-
-1주 일정도 5명 입문자 기준으로 다시 잡자
-
-Day 1 — 전원이 SDK와 보드 파악
-
-Trichimera 샘플을 빌드하고 실행한다. 이날은 역할에 너무 얽매이지 말고 다 같이 보는 게 좋다.
-
-최소 성공:
-
-Camera → Trichimera → Wayland
-
-Day 2 — 각자 기능 분리
-
-1번:
-
-Trichimera 출력 분석
-
-2번:
-
-가짜 bbox 좌표로 Risk Engine 개발
-
-3번:
-
-Wayland overlay 분석
-
-4번:
-
-pthread / IPC 작은 테스트 프로그램
-
-5번:
-
-LED/Buzzer GPIO 테스트
-
-이게 중요하다. 서로 기다리면 안 된다.
-
-AI 담당이 아직 결과를 못 뽑았더라도 위험판단 담당은
-
-Detection test_object = {
-    .x1 = 200,
-    .y1 = 150,
-    .x2 = 300,
-    .y2 = 350
-};
-
-같은 dummy data로 개발하면 된다.
-
-Day 3 — Detection 기반 MVP 통합
-
-Camera
- ↓
-Trichimera
- ↓
-Detection
- ↓
-Risk ROI
- ↓
+```text
+Detection + Freespace
+        ↓
+Risk Engine
+        ↓
 SAFE/WARNING/DANGER
- ↓
-Wayland
+```
 
-여기까지 성공하면 프로젝트는 일단 살아 있다.
+부터 완성하면 돼.
 
-이 시점에서 동작 영상을 반드시 찍어둬.
+반대로 세 가지 출력이 쉽게 얻어지면 원래 계획대로 가고.
 
-Day 4 — Freespace 추가
+---
 
-Detection
-     +
-Freespace
-     ↓
-Risk Engine
+그리고 한 가지는 확실히 말하고 싶어. **초보자 프로젝트라고 해서 기술을 많이 집어넣어야 좋은 프로젝트가 되는 건 아니야.**
 
-객체의 bbox bottom-center가 freespace 안에 있는지 검사한다.
+오히려 면접에서
 
-성공하면:
+> `epoll도 썼고 shared memory도 썼고 socket도 썼고 NPU도 썼습니다.`
 
-단순 객체 검출이 아니라 주행 가능 영역과 객체 위치를 융합해 위험도를 판단
+했는데 왜 썼는지 설명을 못 하는 것보다,
 
-이라고 설명할 수 있다.
+> `Trichimera의 세 가지 출력을 받아 객체의 bbox bottom-center를 기준점으로 잡았습니다. 이 점이 freespace 및 ego-lane 영역에 포함되는지 확인하고, 화면상의 위험 영역에 따라 3단계 위험도를 결정했습니다. 이후 perception과 판단 로직을 프로세스로 분리하면서 shared memory를 적용했습니다.`
 
-Day 5 — Lane 추가
+라고 **자기가 직접 구현한 흐름을 정확히 설명하는 쪽이 훨씬 낫다.**
 
-가능하면:
+그래서 너희에게 맞는 난이도는 **ADAS 기능 70% + Linux 시스템 프로그래밍 30% 정도**라고 생각해. 멀티프로세스까지 못 가더라도 첫 번째 파이프라인을 제대로 완성하면 실패한 프로젝트가 아니고, shared memory까지 성공하면 꽤 잘한 거야.
 
-Detection
-     +
-Freespace
-     +
-Lane
-     ↓
-Risk Engine
-
-까지 간다.
-
-Lane 때문에 하루 종일 막히면 과감히 포기하고 Detection + Freespace 버전으로 돌아간다.
-
-Trichimera에서 Lane Detection 자체가 화면에 표시되는 것과, 그 출력을 우리 C/C++ 코드에서 좌표 형태로 활용하는 건 별개의 문제다.
-
-Day 6 — Linux 요소 + GPIO
-
-기본 시스템이 정상이라면 그때:
-
-pthread
-+
-IPC
-+
-LED/Buzzer
-
-를 넣는다.
-
-Linux 담당이 준비해둔 코드를 통합한다.
-
-여유가 있으면 timerfd 정도를 추가한다.
-
-epoll, signalfd는 여기서 시간이 정말 남을 때만 한다.
-
-Day 7 — 기능 추가 금지
-
-테스트
-→ 버그 수정
-→ 시연 영상
-→ 구조도
-→ 발표자료
-
-만 한다.
-
-그리고 Linux 시스템 프로그래밍을 너무 많이 넣을 필요는 없어
-
-이 부분은 꽤 중요해.
-
-취업 프로젝트에서
-
-epoll, mmap, shm_open, fork, pthread, timerfd, signalfd, socket 다 사용했습니다.
-
-보다
-
-왜 pthread를 사용했고, 데이터 동기화 문제를 어떻게 해결했으며, IPC를 왜 이 방식으로 설계했는지 설명할 수 있습니다.
-
-가 훨씬 낫다.
-
-예를 들어 여러분 수준에서는 이런 구조 하나만 제대로 구현해도 충분하다.
-
-             Main Process
-                  │
-          ┌───────┴────────┐
-          ↓                ↓
-   Inference Thread    Display Thread
-          │
-          │ mutex
-          ▼
-    Shared Result
-          │
-          ▼
-     Risk Thread
-          │
-          ▼
-     LED/Buzzer
-
-여기서
-
-pthread_create()
-pthread_mutex_lock()
-pthread_mutex_unlock()
-pthread_cond_wait()
-pthread_cond_signal()
-
-정도를 제대로 사용해도 동시성 프로그래밍을 경험한 프로젝트가 된다.
-
-오히려 입문자에게는 이쪽이 멀티프로세스 + shared memory + socket + epoll을 전부 넣는 것보다 교육적으로도 낫다.
-
-그래서 성공 기준을 세 단계로 두자
-
-A등급 — 반드시 완성
-
-Trichimera
-+ Detection
-+ 위험 ROI
-+ SAFE/WARNING/DANGER
-+ Wayland
-
-S등급 — 목표
-
-위 기능
-+ Freespace
-+ Lane
-+ pthread
-+ LED/Buzzer
-
-S+등급 — 시간 남으면
-
-위 기능
-+ 프로세스 분리
-+ IPC
-+ timerfd/epoll
-
-이렇게 하면 최악의 경우에도 완성된 결과물이 남는다.
-
-그리고 5명이라는 건 오히려 꽤 큰 장점이야. 한 명이 일주일 동안 이걸 다 해야 한다면 말렸겠지만, 5명이 SDK 분석 / AI / 위험판단 / UI / Linux·하드웨어를 병렬로 진행한다면 충분히 도전할 만하다.
-
-다만 목표를 “일주일 만에 완성도 높은 ADAS를 만든다”로 잡으면 안 되고, “APACHE6의 기존 AI 파이프라인을 활용해 우리가 설계한 위험 판단 시스템을 완성하고, 그 과정에서 Linux 시스템 프로그래밍을 적용한다”로 잡아야 한다. 그 정도 범위라면 지금 막 배우는 학생 프로젝트로도 현실적이고, 오히려 설명하기 좋은 프로젝트가 된다.
+그리고 지금부터는 내가 계획을 짤 때도 **"임베디드를 이제 막 배우기 시작한 학생 5명 + 개발기간 7일"을 기준으로 난이도를 잡는 게 맞겠다.**
